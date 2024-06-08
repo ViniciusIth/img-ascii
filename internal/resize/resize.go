@@ -1,4 +1,4 @@
-package image_util
+package resize
 
 import (
 	"image"
