@@ -23,10 +23,10 @@ func Image2RGBAMatrix(img image.Image) [][]pixel.Pixel {
 			R, G, B, A := pixelAt.RGBA()
 
 			rgbaPixel := pixel.Pixel{
-				R: uint8(R),
-				G: uint8(G),
-				B: uint8(B),
-				A: uint8(A),
+				R: uint8(R >> 8),
+				G: uint8(G >> 8),
+				B: uint8(B >> 8),
+				A: uint8(A >> 8),
 			}
 			imgMatrix[y][x] = rgbaPixel
 		}
@@ -36,7 +36,7 @@ func Image2RGBAMatrix(img image.Image) [][]pixel.Pixel {
 }
 
 func GetCharacterByBrightness(brightness uint8) string {
-	var CHARS = []rune{' ', '_', '.', ',', '-', '=', '+', ':', ';', 'c', 'b', 'a', '?', '!', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '$', 'W', '#', '@', 'Ñ'}
+	var CHARS = []rune{'@', '#', '%', 'W', 'M', '8', '&', 'B', 'D', 'Q', 'H', 'p', 'Z', 'Y', 'O', '2', 'L', 'C', '?', 'o', '+', 'i', '=', '~', ';', ':', ',', '.', ' '}
 
-	return string(CHARS[brightness/uint8(len(CHARS))])
+	return string(CHARS[int(brightness)*(len(CHARS)-1)/255])
 }
