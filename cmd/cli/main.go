@@ -5,17 +5,19 @@ import (
 	"fmt"
 	"image"
 	"os"
+	"sync"
 
+	"image/color"
 	_ "image/jpeg"
 	_ "image/png"
 
-	"github.com/viniciusith/img2ascii/internal/converter"
+	"github.com/viniciusith/img2ascii/internal/adjustment"
+	"github.com/viniciusith/img2ascii/internal/parallel"
 	"github.com/viniciusith/img2ascii/internal/pixel"
 	"github.com/viniciusith/img2ascii/internal/resize"
 )
 
 func main() {
-
 	args := os.Args[1:]
 	if len(args) < 1 {
 		fmt.Println("Please provide an image path")
@@ -24,41 +26,74 @@ func main() {
 	}
 
 	width := flag.Int("width", 0, "Width of the image")
-
 	flag.Parse()
 
-	fmt.Println(*width)
+	imgPath := args[len(args)-1]
+	img, err := loadImage(imgPath)
+	if err != nil {
+		fmt.Println("Error loading image:", err)
+		os.Exit(1)
+	}
 
-	file, _ := os.OpenFile(args[len(args)-1], os.O_RDONLY, 0)
+	if *width > 0 {
+		img = resize.ScaleWidth(img, *width)
+	}
+
+	adjustments := createAdjustments()
+
+	if err := saveAsASCIIArt(img, adjustments, "test.txt"); err != nil {
+		fmt.Println("Error saving ASCII art:", err)
+		os.Exit(1)
+	}
+}
+
+func loadImage(path string) (image.Image, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
 	defer file.Close()
 
 	img, _, err := image.Decode(file)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return nil, err
 	}
+	return img, nil
+}
 
-	if *width >= 80 {
-		img = resize.ScaleWidth(img, *width)
+func createAdjustments() func(color.RGBA) color.RGBA {
+	contrast := adjustment.Contrast(3)
+	brightness := adjustment.Brightness(0.9)
+	invert := adjustment.Invert()
+	return adjustment.Compose(contrast, brightness, invert)
+}
+
+func saveAsASCIIArt(img image.Image, adjustments func(color.RGBA) color.RGBA, outputPath string) error {
+	saveFile, err := os.Create(outputPath)
+	if err != nil {
+		return err
 	}
+	defer saveFile.Close()
 
-	imgMatrix := converter.Image2RGBAMatrix(img)
+	var wg sync.WaitGroup
+	channel := make(chan []string, img.Bounds().Max.Y)
 
-	saveFile, _ := os.Create("test.txt")
+	parallel.ProcessInParallel(img.Bounds().Max.Y, func(start, end int) {
+		wg.Add(1)
+		go func(start, end int) {
+			defer wg.Done()
+			pixel.ProcessImageSegment(pixel.Task{StartY: start, EndY: end, Img: img, Result: channel}, adjustments)
+		}(start, end)
+	})
 
-	for y := 0; y < len(imgMatrix); y++ {
-		for x := 0; x < len(imgMatrix[y]); x++ {
-			brightness := pixel.GetPixelBrightness(&imgMatrix[y][x])
-			char := converter.GetCharacterByBrightness(brightness)
+	wg.Wait()
+	close(channel)
 
-			fmt.Print(char)
-			fmt.Fprint(saveFile, char)
+	for rows := range channel {
+		for _, row := range rows {
+			fmt.Fprintln(saveFile, row)
 		}
-
-		fmt.Println()
-		fmt.Fprintln(saveFile)
 	}
 
-	p := pixel.Pixel{R: 100, G: 100, B: 100, A: 0}
-	fmt.Println(pixel.GetPixelBrightness(&p)) // Output should be 54
+	return nil
 }
